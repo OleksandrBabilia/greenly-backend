@@ -16,29 +16,35 @@ import (
 )
 
 func handleChat(w http.ResponseWriter, r *http.Request) {
+	var bodyBytes []byte
+	if r.Body != nil {
+		bodyBytes, _ = io.ReadAll(r.Body)
+	}
 	log.WithFields(log.Fields{
 		"method": r.Method,
 		"path":   r.RequestURI,
 		"ip":     r.RemoteAddr,
-		"body":   r.Body,
-	}).Info("incoming request")
+		"body":   string(bodyBytes),
+	}).Info("Incoming request")
+	r.Body = io.NopCloser(bytes.NewBuffer(bodyBytes))
 
-	if r.Method != "POST" {
+	if r.Method != http.MethodPost {
 		http.Error(w, "Invalid method", http.StatusMethodNotAllowed)
 		return
 	}
 
 	var req ChatRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		log.Printf("Error decoding request: %v", err)
+		log.Errorf("Error decoding request: %v", err)
 		http.Error(w, "Bad request", http.StatusBadRequest)
+		return
 	}
 
 	ctx := context.Background()
 
 	cur, err := messagesCollection.Find(ctx, bson.M{"chat_id": req.ChatID})
 	if err != nil {
-		http.Error(w, "DB error", 500)
+		http.Error(w, "DB error", http.StatusInternalServerError)
 		return
 	}
 	defer cur.Close(ctx)
@@ -46,13 +52,25 @@ func handleChat(w http.ResponseWriter, r *http.Request) {
 	var history []Message
 	for cur.Next(ctx) {
 		var msg Message
-		cur.Decode(&msg)
-		history = append(history, msg)
+		if err := cur.Decode(&msg); err == nil {
+			history = append(history, msg)
+		}
 	}
 
 	sort.Slice(history, func(i, j int) bool {
 		return history[i].Timestamp.Before(history[j].Timestamp)
 	})
+
+	imageToUse := req.Image
+	if imageToUse == "" {
+		for i := len(history) - 1; i >= 0; i-- {
+			if history[i].Image != "" {
+				imageToUse = history[i].Image
+				log.Info("Fallback to image from history")
+				break
+			}
+		}
+	}
 
 	userMsg := Message{
 		ChatID:    req.ChatID,
@@ -60,26 +78,58 @@ func handleChat(w http.ResponseWriter, r *http.Request) {
 		Content:   req.Message,
 		Timestamp: time.Now(),
 		UserID:    req.UserID,
+		Image:     imageToUse,
 	}
 	history = append(history, userMsg)
 
-	apiPayload := map[string]interface{}{
-		"message": history,
+	objectValue := req.Object
+	if objectValue == "" {
+		for i := len(history) - 1; i >= 0; i-- {
+			if history[i].Role == "user" && history[i].UserID != "" {
+				objectValue = history[i].UserID
+				break
+			}
+		}
 	}
+	log.WithField("Object", objectValue).Info("Resolved object value")
+
+	var promptBuilder strings.Builder
+	promptBuilder.WriteString("Chat history:\n")
+	for _, msg := range history {
+		role := strings.Title(msg.Role)
+		promptBuilder.WriteString(role + ": " + msg.Content + "\n")
+	}
+	promptBuilder.WriteString("\nPrompt: " + req.Message)
+	finalPrompt := promptBuilder.String()
+
+	apiPayload := map[string]interface{}{
+		"prompt": finalPrompt,
+		"object": objectValue,
+	}
+	if imageToUse != "" {
+		apiPayload["image"] = imageToUse
+		log.Info("Including image in LLM payload")
+	}
+
 	payloadBytes, _ := json.Marshal(apiPayload)
 
-	resp, err := http.Post("http://localhost:5000/chat", "application/json", bytes.NewBuffer(payloadBytes))
+	log.WithField("payload", string(payloadBytes)).Info("Sending request to external LLM")
 
+	resp, err := http.Post("https://a91f-77-76-10-114.ngrok-free.app/chat", "application/json", bytes.NewBuffer(payloadBytes))
 	if err != nil {
-		http.Error(w, "Baldr API Error", 500)
+		http.Error(w, "Baldr API error", http.StatusInternalServerError)
 		return
 	}
 	defer resp.Body.Close()
 
 	var baldrResponse struct {
-		Content string `json:"content"`
+		Content string `json:"message"`
 	}
-	json.NewDecoder(resp.Body).Decode(&baldrResponse)
+	if err := json.NewDecoder(resp.Body).Decode(&baldrResponse); err != nil {
+		log.Errorf("Error decoding response from LLM: %v", err)
+		http.Error(w, "LLM response error", http.StatusInternalServerError)
+		return
+	}
 
 	assistantMsg := Message{
 		ChatID:    req.ChatID,
@@ -89,11 +139,13 @@ func handleChat(w http.ResponseWriter, r *http.Request) {
 		UserID:    req.UserID,
 	}
 
-	json.NewEncoder(w).Encode((assistantMsg))
+	json.NewEncoder(w).Encode(assistantMsg)
+
 	if req.UserID != "" {
 		_, err = messagesCollection.InsertMany(ctx, []interface{}{userMsg, assistantMsg})
 		if err != nil {
-			http.Error(w, "DB insert error", 500)
+			log.Errorf("DB insert error: %v", err)
+			http.Error(w, "DB insert error", http.StatusInternalServerError)
 			return
 		}
 	}

@@ -8,14 +8,17 @@ type Message struct {
 	Content   string    `json:"content" bson:"content"`
 	Timestamp time.Time `json:"timestamp" bson:"timestamp"`
 	UserID    string    `json:"user_id" bson:"user_id"`
+	Object    string    `json:"object_name"`
+	Image     string    `bson:"image,omitempty" json:"image,omitempty"`
 }
 
 type ChatRequest struct {
 	ChatID      string    `json:"chat_id"`
 	Message     string    `json:"content"`
 	UserID      string    `json:"user_id"`
-	Object      string    `json:"object"`
+	Object      string    `json:"object_name"`
 	ChatHistory []Message `json:"chat_history,omitempty"`
+	Image       string    `json:"image,omitempty"`
 }
 
 type GoogleAuthRequest struct {

@@ -29,6 +29,6 @@ func main() {
 
 	handler := loggingMiddleware(c.Handler(mux))
 
-	log.Println("Server started on :8080")
-	log.Fatal(http.ListenAndServe(":8080", handler))
+	log.Println("Server started on :8081")
+	log.Fatal(http.ListenAndServe(":8081", handler))
 }
