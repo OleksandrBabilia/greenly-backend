@@ -21,7 +21,7 @@ func main() {
 	mux.HandleFunc("/auth", handleGoogleAuth)
 
 	c := cors.New(cors.Options{
-		AllowedOrigins:   []string{"http://localhost:3000", "http://192.168.0.102:3000", "http://192.168.0.102.nip.io:3000"},
+		AllowedOrigins:   []string{"http://localhost:3000", "http://192.168.0.100:3000", "http://192.168.0.100.nip.io:3000"},
 		AllowedMethods:   []string{"GET", "POST", "OPTIONS"},
 		AllowedHeaders:   []string{"Content-Type", "Authorization"},
 		AllowCredentials: true, // emm

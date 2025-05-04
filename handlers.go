@@ -114,8 +114,8 @@ func handleChat(w http.ResponseWriter, r *http.Request) {
 	payloadBytes, _ := json.Marshal(apiPayload)
 
 	log.WithField("payload", string(payloadBytes)).Info("Sending request to external LLM")
-
-	resp, err := http.Post("https://a91f-77-76-10-114.ngrok-free.app/chat", "application/json", bytes.NewBuffer(payloadBytes))
+	var bald_url = os.Getenv("BALDR_URL")
+	resp, err := http.Post(bald_url+"/chat", "application/json", bytes.NewBuffer(payloadBytes))
 	if err != nil {
 		http.Error(w, "Baldr API error", http.StatusInternalServerError)
 		return
@@ -124,6 +124,8 @@ func handleChat(w http.ResponseWriter, r *http.Request) {
 
 	var baldrResponse struct {
 		Content string `json:"message"`
+		Img     string `json:"img,omitempty"`
+		ImgName string `json:"img_name,omitempty"`
 	}
 	if err := json.NewDecoder(resp.Body).Decode(&baldrResponse); err != nil {
 		log.Errorf("Error decoding response from LLM: %v", err)
@@ -137,6 +139,8 @@ func handleChat(w http.ResponseWriter, r *http.Request) {
 		Content:   baldrResponse.Content,
 		Timestamp: time.Now(),
 		UserID:    req.UserID,
+		Image:     baldrResponse.Img,
+		ImageName: baldrResponse.ImgName,
 	}
 
 	json.NewEncoder(w).Encode(assistantMsg)

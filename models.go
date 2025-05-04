@@ -10,6 +10,7 @@ type Message struct {
 	UserID    string    `json:"user_id" bson:"user_id"`
 	Object    string    `json:"object_name"`
 	Image     string    `bson:"image,omitempty" json:"image,omitempty"`
+	ImageName string    `bson:"image_name,omitempty" json:"image_name,omitempty"`
 }
 
 type ChatRequest struct {
@@ -19,6 +20,7 @@ type ChatRequest struct {
 	Object      string    `json:"object_name"`
 	ChatHistory []Message `json:"chat_history,omitempty"`
 	Image       string    `json:"image,omitempty"`
+	ImageName   string    `json:"image_name,omitempty"`
 }
 
 type GoogleAuthRequest struct {
