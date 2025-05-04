@@ -35,3 +35,22 @@ type GoogleTokenResponse struct {
 	TokenType    string `json:"token_type"`
 	IDToken      string `json:"id_token"`
 }
+
+type InpaintRequest struct {
+	ChatID         string `json:"chat_id"`
+	UserID         string `json:"user_id"`
+	PositivePrompt string `json:"positive_prompt"`
+	OriginalImage  string `json:"original_image"`
+	ImageName      string `json:"image_name"`
+	MaskImage      string `json:"current_image"`
+	NegativePrompt string `json:"negative_prompt"`
+}
+
+type InpaintBaldrResponse struct {
+	Img string `json:"img"`
+}
+
+type InpaintResponse struct {
+	Img     string `json:"processed_image"`
+	ImgName string `json:"processed_image_name"`
+}

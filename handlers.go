@@ -103,8 +103,10 @@ func handleChat(w http.ResponseWriter, r *http.Request) {
 	finalPrompt := promptBuilder.String()
 
 	apiPayload := map[string]interface{}{
-		"prompt": finalPrompt,
-		"object": objectValue,
+		"prompt":  finalPrompt,
+		"object":  objectValue,
+		"chat_id": req.ChatID,
+		"user_id": req.UserID,
 	}
 	if imageToUse != "" {
 		apiPayload["image"] = imageToUse
@@ -281,4 +283,82 @@ func getUserMessages(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(messages)
+}
+
+func handleInpaint(w http.ResponseWriter, r *http.Request) {
+	var bodyBytes []byte
+	if r.Body != nil {
+		bodyBytes, _ = io.ReadAll(r.Body)
+	}
+	log.WithFields(log.Fields{
+		"method": r.Method,
+		"path":   r.RequestURI,
+		"ip":     r.RemoteAddr,
+		"body":   string(bodyBytes),
+	}).Info("Incoming inpaint request")
+	r.Body = io.NopCloser(bytes.NewBuffer(bodyBytes))
+
+	if r.Method != http.MethodPost {
+		http.Error(w, "Invalid method", http.StatusMethodNotAllowed)
+		return
+	}
+
+	var req InpaintRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		log.Errorf("Error decoding inpaint request: %v", err)
+		http.Error(w, "Bad request", http.StatusBadRequest)
+		return
+	}
+
+	payloadBytes, err := json.Marshal(req)
+	if err != nil {
+		log.Errorf("Failed to marshal payload: %v", err)
+		http.Error(w, "Internal error", http.StatusInternalServerError)
+		return
+	}
+
+	var baldrURL = os.Getenv("BALDR_SDXL_URL")
+	resp, err := http.Post(baldrURL+"/inpaint", "application/json", bytes.NewBuffer(payloadBytes))
+	if err != nil {
+		log.Errorf("Error calling inpaint model: %v", err)
+		http.Error(w, "Inpaint API error", http.StatusInternalServerError)
+		return
+	}
+	defer resp.Body.Close()
+
+	var modelResp InpaintBaldrResponse
+	if err := json.NewDecoder(resp.Body).Decode(&modelResp); err != nil {
+		log.Errorf("Failed to decode inpaint response: %v", err)
+		http.Error(w, "Invalid response from model", http.StatusInternalServerError)
+		return
+	}
+
+	assistantMsg := Message{
+		ChatID:    req.ChatID,
+		Role:      "assistant",
+		Content:   "Here is your inpainted image.",
+		Timestamp: time.Now(),
+		UserID:    req.UserID,
+		Image:     modelResp.Img,
+		ImageName: req.ImageName,
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	if req.UserID != "" {
+		_, err := messagesCollection.InsertOne(ctx, assistantMsg)
+		if err != nil {
+			log.Errorf("DB insert error: %v", err)
+			http.Error(w, "DB insert error", http.StatusInternalServerError)
+			return
+		}
+	}
+	modelApiResp := InpaintResponse{
+		Img:     modelResp.Img,
+		ImgName: req.ImageName,
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(modelApiResp)
 }
