@@ -170,7 +170,7 @@ func getChatHistory(w http.ResponseWriter, r *http.Request) {
 
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
-
+	log.WithField("chat_id", chatID).Info("Fetching chat history for id")
 	cursor, err := messagesCollection.Find(ctx, bson.M{"chat_id": chatID})
 	if err != nil {
 		http.Error(w, "Failed to retrive messages", http.StatusInternalServerError)
@@ -263,6 +263,7 @@ func getUserMessages(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
+	log.WithField("user_id", userID).Info("Fetching chat history for user_id")
 	filter := bson.M{"user_id": userID}
 	cursor, err := messagesCollection.Find(ctx, filter)
 	if err != nil {
@@ -361,4 +362,53 @@ func handleInpaint(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(modelApiResp)
+}
+func handlePricing(w http.ResponseWriter, r *http.Request) {
+	var bodyBytes []byte
+	if r.Body != nil {
+		bodyBytes, _ = io.ReadAll(r.Body)
+	}
+	log.WithFields(log.Fields{
+		"method": r.Method,
+		"path":   r.RequestURI,
+		"ip":     r.RemoteAddr,
+		"body":   string(bodyBytes),
+	}).Info("Incoming pricing request")
+	r.Body = io.NopCloser(bytes.NewBuffer(bodyBytes))
+
+	if r.Method != http.MethodPost {
+		http.Error(w, "Invalid method", http.StatusMethodNotAllowed)
+		return
+	}
+
+	type PricingRequest struct {
+		OriginalImage       string `json:"original_image"`
+		ResourceDescription string `json:"resource_description"`
+		ResourceName        string `json:"resource_name"`
+		UserID              string `json:"user_id"`
+	}
+
+	var req PricingRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		log.Errorf("Error decoding pricing request: %v", err)
+		http.Error(w, "Bad request", http.StatusBadRequest)
+		return
+	}
+
+	log.WithFields(log.Fields{
+		"user_id":              req.UserID,
+		"resource_name":        req.ResourceName,
+		"resource_description": req.ResourceDescription,
+	}).Info("Processing pricing request")
+
+	type PricingResponse struct {
+		PricingSchema string `json:"pricing_schema"`
+	}
+
+	resp := PricingResponse{
+		PricingSchema: "100 USD",
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(resp)
 }

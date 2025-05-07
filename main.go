@@ -20,6 +20,7 @@ func main() {
 	mux.HandleFunc("/user/", getUserMessages)
 	mux.HandleFunc("/auth", handleGoogleAuth)
 	mux.HandleFunc("/inplant/", handleInpaint)
+	mux.HandleFunc("/pricing/", handlePricing)
 
 	c := cors.New(cors.Options{
 		AllowedOrigins:   []string{"http://localhost:3000", "http://192.168.0.100:3000", "http://192.168.0.100.nip.io:3000"},
